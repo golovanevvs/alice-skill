@@ -15,6 +15,7 @@ func run() error {
 
 // обработчик HTTP-запроса
 func webhook(w http.ResponseWriter, r *http.Request) {
+	// разрешён только POST-метод
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -24,7 +25,7 @@ func webhook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// ответ-заглушка без проверки ошибок
-	_, _ = w.Write([]byte(`
+	w.Write([]byte(`
 	{
 		"response": {
 			"text": "Извините, я пока ничего не умею"
