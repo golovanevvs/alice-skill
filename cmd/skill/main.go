@@ -1,8 +1,13 @@
 package main
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 func main() {
+	parseFlags()
+
 	if err := run(); err != nil {
 		panic(err)
 	}
@@ -10,7 +15,8 @@ func main() {
 
 // для инициализации зависимостей сервера перед запуском
 func run() error {
-	return http.ListenAndServe(":8080", http.HandlerFunc(webhook))
+	fmt.Println("Runnig server on", flagRunAddr)
+	return http.ListenAndServe(flagRunAddr, http.HandlerFunc(webhook))
 }
 
 // обработчик HTTP-запроса
