@@ -12,7 +12,7 @@ var (
 
 func parseFlags() {
 	flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
-	flag.StringVar(&flagLogLevel, "l", "debug", "log level")
+	flag.StringVar(&flagLogLevel, "l", "info", "log level")
 	flag.Parse()
 
 	if envRunAddr := os.Getenv("RUN_ADDR"); envRunAddr != "" {
