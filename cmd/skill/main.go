@@ -1,8 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"alice-skill/internal/logger"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -15,14 +17,21 @@ func main() {
 
 // для инициализации зависимостей сервера перед запуском
 func run() error {
-	fmt.Println("Runnig server on", flagRunAddr)
-	return http.ListenAndServe(flagRunAddr, http.HandlerFunc(webhook))
+	if err := logger.Initialize(flagLogLevel); err != nil {
+		return err
+	}
+
+	logger.Log.Info("Running server", zap.String("address", flagRunAddr))
+
+	// оборачиваем хендлер webhook в middleware с логированием
+	return http.ListenAndServe(flagRunAddr, logger.RequestLogger(webhook))
 }
 
 // обработчик HTTP-запроса
 func webhook(w http.ResponseWriter, r *http.Request) {
 	// разрешён только POST-метод
 	if r.Method != http.MethodPost {
+		logger.Log.Debug("got request with bad method", zap.String("method", r.Method))
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -39,4 +48,6 @@ func webhook(w http.ResponseWriter, r *http.Request) {
 		"version": "1.0"
 	}
 	`))
+
+	logger.Log.Debug("sending HTTP 200 response")
 }
