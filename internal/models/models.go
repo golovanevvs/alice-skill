@@ -19,7 +19,12 @@ type Request struct {
 	Version  string          `json:"version"`
 }
 type Session struct {
-	New bool `json:"new"`
+	New  bool `json:"new"`
+	User User
+}
+
+type User struct {
+	UserID string `json:"userid"`
 }
 
 // Описывает ответ, который нужно озвучить
