@@ -4,8 +4,12 @@ import (
 	"alice-skill/internal/store"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Store реализует интерфейс store.Store и позволяет взаимодействовать с СУБД PostgreSQL
@@ -159,5 +163,24 @@ func (s Store) SaveMessage(ctx context.Context, userID string, msg store.Message
 		fmt.Printf("Ошибка добавления сообщения в БД: %v", err)
 	}
 
+	return err
+}
+
+// RegisterUser добавляет новую запись пользователя
+func (s Store) RegisterUser(ctx context.Context, userID, username string) error {
+	// добавляем новую запись пользователя
+	_, err := s.conn.ExecContext(ctx, `
+		INSERT INTO users
+			(id, username)
+		VALUES
+			($1, $2);
+		`, userID, username)
+	if err != nil {
+		// проверяем, что ошибка сигнализирует о потенциальном нарушении целостности данных
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+			err = store.ErrConflict
+		}
+	}
 	return err
 }
