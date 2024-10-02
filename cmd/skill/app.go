@@ -4,6 +4,7 @@ import (
 	"alice-skill/internal/logger"
 	"alice-skill/internal/models"
 	"alice-skill/internal/store"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +17,21 @@ import (
 
 // app инкапсулирует в себя все зависимости и логику приложения
 type app struct {
-	store store.Store
+	store   store.Store
+	msgChan chan store.Message // канал для отложенной отправки новых сообщений
 }
 
 // newApp принимает на вход внешние зависимости приложения и возвращает новый объект app
 func newApp(s store.Store) *app {
-	return &app{store: s}
+	instance := &app{
+		store:   s,
+		msgChan: make(chan store.Message, 1024), // установим каналу буфер в 1024 сообщения
+	}
+
+	// запустим горутину с фоновым сохранением новых сообщений
+	go instance.flushMessages()
+
+	return instance
 }
 
 // обработчик HTTP-запроса
@@ -71,17 +81,25 @@ func (a *app) webhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// сохраняем новое сообщение в СУБД, после успешного сохранения оно станет доступно для прослушивания получателем
-		err = a.store.SaveMessage(ctx, recipientID, store.Message{
-			Sender:  req.Session.User.UserID,
-			Time:    time.Now(),
-			Payload: message,
-		})
-		if err != nil {
-			logger.Log.Debug("cannot save message", zap.String("recipient", recipientID), zap.Error(err))
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+		// отправим сообщение в очередь на сохранение
+		a.msgChan <- store.Message{
+			Sender:    req.Session.User.UserID,
+			Recepient: recipientID,
+			Time:      time.Now(),
+			Payload:   message,
 		}
+
+		// сохраняем новое сообщение в СУБД, после успешного сохранения оно станет доступно для прослушивания получателем
+		// err = a.store.SaveMessage(ctx, recipientID, store.Message{
+		// 	Sender:  req.Session.User.UserID,
+		// 	Time:    time.Now(),
+		// 	Payload: message,
+		// })
+		// if err != nil {
+		// 	logger.Log.Debug("cannot save message", zap.String("recipient", recipientID), zap.Error(err))
+		// 	w.WriteHeader(http.StatusInternalServerError)
+		// 	return
+		// }
 
 		// Оповестим отправителя об успешности операции
 		text = "Сообщение успешно отправлено"
@@ -193,4 +211,34 @@ func (a *app) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Log.Debug("sending HTTP 200 response")
+}
+
+// flushMessages постоянно сохраняет несколько сообщений в хранилище с определённым интервалом
+func (a *app) flushMessages() {
+	// будем сохранять сообщения, накопленные за последние 10 секунд
+	ticker := time.NewTicker(10 * time.Second)
+
+	var messages []store.Message
+
+	for {
+		select {
+		case msg := <-a.msgChan:
+			// добавим сообщение в слайс для последующего сохранения
+			messages = append(messages, msg)
+		case <-ticker.C:
+			// подождём, пока придёт хотя бы одно сообщение
+			if len(messages) == 0 {
+				continue
+			}
+			// сохраним все пришедшие сообщения одновременно
+			err := a.store.SaveMessages(context.TODO(), messages...)
+			if err != nil {
+				logger.Log.Debug("cannot save messages", zap.Error(err))
+				// не будем стирать сообщения, попробуем отправить их чуть позже
+				continue
+			}
+			// сотрём успешно отосланные сообщения
+			messages = nil
+		}
+	}
 }

@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
+	"strings"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -150,14 +150,28 @@ func (s Store) GetMessage(ctx context.Context, id int64) (*store.Message, error)
 }
 
 // SaveMessage добавляет новое сообщение в БД
-func (s Store) SaveMessage(ctx context.Context, userID string, msg store.Message) error {
-	// добавляем новое сообщение в БД
-	_, err := s.conn.ExecContext(ctx, `
-	INSERT INTO messages
-		(sender, recipient, payload, sent_at)
-	VALUES
-		($1, $2, $3, $4);
-	`, msg.Sender, userID, msg.Payload, time.Now())
+func (s Store) SaveMessages(ctx context.Context, messages ...store.Message) error {
+	// соберём данные для создания запроса с групповой вставкой
+	var values []string
+	var args []any
+	for i, msg := range messages {
+		// в нашем запросе по 4 параметра на каждое сообщение
+		base := i * 4
+		// PostgreSQL требует шаблоны в формате ($1, $2, $3, $4) для каждой вставки
+		params := fmt.Sprintf("($%d, $%d, $%d, $%d)", base+1, base+2, base+3, base+4)
+		values = append(values, params)
+		args = append(args, msg.Sender, msg.Recepient, msg.Payload, msg.Time)
+	}
+
+	// составляем строку запроса
+	query := `
+		INSERT INTO messages
+			(sender, recepient, payload, sent_at)
+		VALUES 
+	` + strings.Join(values, ",") + `;`
+
+	// добавляем новые сообщения в БД
+	_, err := s.conn.ExecContext(ctx, query, args...)
 
 	if err != nil {
 		fmt.Printf("Ошибка добавления сообщения в БД: %v", err)
